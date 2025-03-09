@@ -54,13 +54,13 @@ st.set_page_config(
 # ---------------------------
 # App Introduction
 # ---------------------------
-st.title("StockTalk: Your Investment Buddy")
+st.title("🤖StockTalk: Your Investment Buddy 🤑")
 st.markdown("""
 Welcome to **StockTalk** – your fun, simple way to explore stocks!
 
 - **500 Most Talked Stocks:** We use a list of the 500 most buzzed-about stocks.
 - **Market Snapshot:** See how major indices are doing today.
-- **🔥 High Volatility Stocks:** Check out the top 10 stocks (from our first 50) with the biggest weekly moves, along with their daily moves.
+- **High Volatility Stocks:** Check out the top 10 stocks with the biggest weekly moves, along with their daily moves.
 - **Chat & Analysis:** Ask any investment question. If your stock is on our list, you’ll also get a TradingView chart link!
 - **Extra Ideas:** Not in our list? We can help with other investment insights too.
 

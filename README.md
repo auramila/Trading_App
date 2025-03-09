@@ -52,8 +52,7 @@ git clone git@github.com:TuringCollegeSubmissions/aumilas-AE.2.5.git
 2. Create a Virtual Environment (Optional)
 
 ```markdown
-pip install -r requirements.txt
-```python -m venv venv
+python -m venv venv
 source venv/bin/activate
 ```
 
