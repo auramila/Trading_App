@@ -33,6 +33,41 @@ from reportlab.lib.pagesizes import letter
 # Date/Time
 from datetime import datetime, timedelta
 
+# ------------------------------------------------
+# SECURITY GUARD #1: Simple disallowed-content check
+# ------------------------------------------------
+# This is a basic text check for certain disallowed phrases or known jailbreak attempts.
+# In production, you can add more robust checks or integrate an external Moderation API.
+DISALLOWED_PHRASES = [
+    "jailbreak",
+    "DAN prompt",
+    "hate speech",
+    "racist",
+    "violence"
+]
+
+def contains_disallowed_content(user_input: str) -> bool:
+    input_lower = user_input.lower()
+    return any(phrase in input_lower for phrase in DISALLOWED_PHRASES)
+
+# -----------------------------------------------
+# SECURITY GUARD #2: Rate/length limit
+# -----------------------------------------------
+# This helps mitigate extremely large or frequent requests that might break or spam the system.
+LAST_REQUEST_TIME_KEY = "last_request_time"
+REQUEST_COOLDOWN_SECONDS = 2  # minimal cooldown to prevent spamming
+MAX_PROMPT_LENGTH = 1500      # maximum number of characters for a single prompt
+
+def is_too_frequent_or_long(user_input: str) -> bool:
+    current_time = time.time()
+    last_time = st.session_state.get(LAST_REQUEST_TIME_KEY, 0)
+    if current_time - last_time < REQUEST_COOLDOWN_SECONDS:
+        return True
+    if len(user_input) > MAX_PROMPT_LENGTH:
+        return True
+    st.session_state[LAST_REQUEST_TIME_KEY] = current_time
+    return False
+
 # ---------------------------
 # Session State Initialization
 # ---------------------------
@@ -54,7 +89,7 @@ st.set_page_config(
 # ---------------------------
 # App Introduction
 # ---------------------------
-st.title("🤖StockTalk: Your Investment Buddy 🤑")
+st.title("🤖 StockTalk: Your Investment Buddy 🤑")
 st.markdown("""
 Welcome to **StockTalk** – your fun, simple way to explore stocks!
 
@@ -113,7 +148,7 @@ NEWS_API_KEY = os.getenv("NEWSAPI_KEY")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # ---------------------------
-# Initialize Firebase (if not already)
+# Initialize Firebase
 # ---------------------------
 try:
     if not firebase_admin._apps:
@@ -197,7 +232,7 @@ def get_stock_info_cached(ticker_symbol: str):
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
-        company_name = info.get("longname", "N/A")
+        company_name = info.get("longName", "N/A")
         if company_name == "N/A":
             company_name = info.get("name", "N/A")
         officers = info.get("companyOfficers", [])
@@ -248,8 +283,14 @@ def compute_top_weekly_movers(df: pd.DataFrame):
             close_series = hist["Adj Close"] if "Adj Close" in hist.columns else hist["Close"]
             if isinstance(close_series, pd.DataFrame):
                 close_series = close_series.iloc[:, 0]
-            daily_change = ((close_series.iloc[-1] - close_series.iloc[-2]) / close_series.iloc[-2]) * 100 if len(close_series) >= 2 else None
-            weekly_change = ((close_series.iloc[-1] - close_series.iloc[-6]) / close_series.iloc[-6]) * 100 if len(close_series) >= 6 else None
+            daily_change = (
+                ((close_series.iloc[-1] - close_series.iloc[-2]) / close_series.iloc[-2]) * 100
+                if len(close_series) >= 2 else None
+            )
+            weekly_change = (
+                ((close_series.iloc[-1] - close_series.iloc[-6]) / close_series.iloc[-6]) * 100
+                if len(close_series) >= 6 else None
+            )
         return (
             ticker_value,
             row.get("company name", "N/A"),
@@ -270,13 +311,19 @@ def compute_top_weekly_movers(df: pd.DataFrame):
             progress_bar.progress(completed / total)
     res_df = pd.DataFrame(results, columns=["Ticker", "Company Name", "Sector", "Daily Change", "Weekly Change"])
     res_df = res_df[res_df["Weekly Change"] != ""]
-    res_df["WeeklyNum"] = res_df["Weekly Change"].str.replace("+", "").str.replace("%", "").astype(float).abs()
+    res_df["WeeklyNum"] = (
+        res_df["Weekly Change"]
+        .str.replace("+", "")
+        .str.replace("%", "")
+        .astype(float)
+        .abs()
+    )
     res_df.sort_values(by="WeeklyNum", ascending=False, inplace=True)
     res_df.drop(columns=["WeeklyNum"], inplace=True)
     return res_df.head(10)
 
 # ---------------------------
-# Stock & CEO Analysis (Reverted to initial code)
+# Stock & CEO Analysis
 # ---------------------------
 def clean_ceo_name(ceo_name, company_name):
     ceo_name = ceo_name.replace("Mr.", "").replace("Ms.", "").replace("Mrs.", "").replace("Dr.", "").replace("Jr.", "").replace("Sr.", "").strip()
@@ -503,17 +550,27 @@ if st.session_state["user"]:
     with st.form(key="chat_form", clear_on_submit=True):
         user_text = st.text_input("Your Investment Question:")
         submit_button = st.form_submit_button("Send")
+
     if submit_button and user_text.strip():
-        enriched_query = enrich_investment_query(user_text, st.session_state["user_csv_db"])
-        if conversation:
-            response = conversation.run(enriched_query)
+        # SECURITY GUARDS
+        if contains_disallowed_content(user_text):
+            st.error("⚠️ Your message contains disallowed content or potential jailbreak attempts.")
+        elif is_too_frequent_or_long(user_text):
+            st.warning("🚫 Your message is too large or too frequent. Please wait or shorten your prompt.")
         else:
-            response = "LLM not initialized. Provide an API key or select a model."
-        chart_link = get_chart_link(user_text, st.session_state["user_csv_db"])
-        if chart_link:
-            response += f"\n\nFor visual insights, view the TradingView chart: [View on TradingView]({chart_link})"
-        st.session_state["chat_history"].append({"user": user_text, "bot": response})
-        st.write("🤖:", response)
+            # If content is safe and not too frequent, proceed
+            enriched_query = enrich_investment_query(user_text, st.session_state["user_csv_db"])
+            if conversation:
+                response = conversation.run(enriched_query)
+            else:
+                response = "LLM not initialized. Provide an API key or select a model."
+
+            chart_link = get_chart_link(user_text, st.session_state["user_csv_db"])
+            if chart_link:
+                response += f"\n\nFor visual insights, view the TradingView chart: [View on TradingView]({chart_link})"
+
+            st.session_state["chat_history"].append({"user": user_text, "bot": response})
+            st.write("🤖:", response)
 else:
     st.warning("Please log in to start chatting.")
 
@@ -541,7 +598,7 @@ if st.sidebar.button("View Top Movers"):
         st.sidebar.write(html_table, unsafe_allow_html=True)
 
 # ---------------------------
-# Stock & CEO Analysis (Reverted to initial code)
+# Stock & CEO Analysis
 # ---------------------------
 st.sidebar.title("📊 Stock & CEO Analysis")
 stock_symbol = st.sidebar.text_input("Enter stock ticker (e.g. TSLA, AMZN, AAPL):")

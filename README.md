@@ -23,10 +23,10 @@ StockTalk is an interactive investment analysis app built using Streamlit and La
 
 ## Data Overview
 
-### API Usage
+### Data & API Usage
 
-The app relies on **OpenAI’s GPT API** to generate and evaluate interview questions dynamically.
-Ensure you have a valid **OpenAI API key** to use this tool.
+The app uses a CSV data extract (top500buzz.csv) containing the 500 most talked-about stocks and OpenAI’s GPT API to generate chatbot responses.
+Make sure you have a valid OpenAI API key to use this tool.
 
 ---
 
@@ -37,7 +37,6 @@ Ensure you have a valid **OpenAI API key** to use this tool.
 - NewsAPI – Fetches the latest news for sentiment analysis.
 - Firebase – User authentication and session management.
 - OpenAI API (langchain) – AI-powered investment chatbot.
-- Matplotlib – Stock data visualization.
 - NLTK & TextBlob – Sentiment analysis on news articles.
 
 
