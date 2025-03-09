@@ -1,0 +1,63 @@
+# Virtual environment
+venv/
+.env
+*.venv
+env/
+ENV/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Streamlit cache
+.streamlit/
+
+# Jupyter Notebook checkpoints (if used)
+.ipynb_checkpoints/
+
+# Log and debug files
+logs/
+*.log
+
+# API keys & sensitive credentials
+firebase_credentials.json
+secrets.json
+config.json
+
+# Python compiled files
+*.pyc
+*.pyo
+*.pyd
+
+# Packages
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Temporary files
+*.bak
+*.swp
+*.swo
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+
+# Pytest cache
+.pytest_cache/
+
+# Deployment
+*.tar.gz
+*.zip
+node_modules/
+
+# Ignore exported chat history
+chat_history.json
+chat_history.pdf

@@ -1,0 +1,13 @@
+requests
+pandas
+numpy
+streamlit
+yfinance
+firebase-admin
+matplotlib
+python-dotenv
+nltk
+textblob
+langchain
+reportlab
+openai
