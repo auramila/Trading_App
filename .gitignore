@@ -61,3 +61,6 @@ node_modules/
 # Ignore exported chat history
 chat_history.json
 chat_history.pdf
+
+# Ignore secrets in streamlit
+.streamlit/secrets.toml
