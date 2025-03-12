@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 import yfinance as yf
+import firebase_admin
 import matplotlib.pyplot as plt
 from dotenv import load_dotenv
 import time
@@ -17,6 +18,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import nltk
 from textblob import TextBlob
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+# Firebase
+from firebase_admin import credentials, auth
 
 # LangChain Chat Model
 from langchain.chat_models import ChatOpenAI
@@ -67,6 +71,10 @@ def is_too_frequent_or_long(user_input: str) -> bool:
 # ---------------------------
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
+if "user" not in st.session_state:
+    st.session_state["user"] = None
+if "user_csv_db" not in st.session_state:
+    st.session_state["user_csv_db"] = None
 
 # ---------------------------
 # Streamlit Page Setup
@@ -96,6 +104,32 @@ Let's dive in and have some fun with investing!
 # OpenAI and App Setup (Expandable)
 # ---------------------------
 with st.sidebar.expander("App Setup"):
+    st.subheader("Login / Register")
+    if st.session_state.get("user"):
+        st.success(f"✅ Logged in as {st.session_state['user']}")
+        if st.button("Logout", key="logout"):
+            st.session_state["user"] = None
+            st.info("You have been logged out. Refresh the page!")
+    else:
+        auth_mode = st.radio("Mode", ["Login", "Register"], key="auth_mode")
+        auth_email = st.text_input("Email", key="auth_email")
+        auth_password = st.text_input("Password", type="password", key="auth_password")
+        if auth_mode == "Login":
+            if st.button("Login", key="login"):
+                try:
+                    user = auth.get_user_by_email(auth_email)
+                    st.session_state["user"] = user.email
+                    st.success(f"Logged in as {user.email}")
+                except Exception:
+                    st.error("Login failed: Check your credentials.")
+        else:
+            if st.button("Register", key="register"):
+                try:
+                    user = auth.create_user(email=auth_email, password=auth_password)
+                    st.success("Registration successful! Please log in.")
+                except Exception as e:
+                    st.error(f"Registration failed: {e}")
+
     st.subheader("OpenAI Settings")
     openai_api_key_input = st.text_input("OpenAI API Key", type="password", key="openai_key")
     openai_model = st.selectbox("Model Name", ["gpt-4", "gpt-3.5-turbo"], key="model_name")
@@ -112,6 +146,17 @@ NEWS_API_KEY = os.getenv("NEWSAPI_KEY")
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 # ---------------------------
+# Initialize Firebase
+# ---------------------------
+try:
+    if not firebase_admin._apps:
+        cred_path = "firebase_credentials.json"
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+except Exception as e:
+    st.sidebar.error(f"Firebase initialization error: {e}")
+
+# ---------------------------
 # Download NLTK Data
 # ---------------------------
 nltk.download('vader_lexicon')
@@ -120,7 +165,7 @@ sia = SentimentIntensityAnalyzer()
 # ---------------------------
 # Load Default CSV (500 Most Talked Stocks) if not loaded
 # ---------------------------
-if "user_csv_db" not in st.session_state:
+if st.session_state.get("user_csv_db") is None:
     try:
         default_df = pd.read_csv("top500buzz.csv")
         default_df.columns = [col.lower() for col in default_df.columns]
@@ -537,35 +582,33 @@ def get_chart_link(user_text: str, df: pd.DataFrame) -> str:
 # Main Chatbot UI (Investment Advice)
 # ---------------------------
 st.title("StockTalk: Your Investment Buddy")
+if st.session_state["user"]:
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_text = st.text_input("Your Investment Question (e.g. 'Tell me more about TSLA?', 'Which sector is hot right now?'):")
+        submit_button = st.form_submit_button("Send")
 
-with st.form(key="chat_form", clear_on_submit=True):
-    user_text = st.text_input("Your Investment Question (e.g. 'Tell me more about TSLA?', 'Which sector is hot right now?'):")
-    submit_button = st.form_submit_button("Send")
-
-if submit_button and user_text.strip():
-    # SECURITY GUARDS
-    if contains_disallowed_content(user_text):
-        st.error("⚠️ Your message contains disallowed content or potential jailbreak attempts.")
-    elif is_too_frequent_or_long(user_text):
-        st.warning("🚫 Your message is too large or too frequent. Please wait or shorten your prompt.")
-    else:
-        # If content is safe and not too frequent, proceed
-        if "user_csv_db" in st.session_state and st.session_state["user_csv_db"] is not None:
+    if submit_button and user_text.strip():
+        # SECURITY GUARDS
+        if contains_disallowed_content(user_text):
+            st.error("⚠️ Your message contains disallowed content or potential jailbreak attempts.")
+        elif is_too_frequent_or_long(user_text):
+            st.warning("🚫 Your message is too large or too frequent. Please wait or shorten your prompt.")
+        else:
+            # If content is safe and not too frequent, proceed
             enriched_query = enrich_investment_query(user_text, st.session_state["user_csv_db"])
-        else:
-            enriched_query = user_text
+            if conversation:
+                response = conversation.run(enriched_query)
+            else:
+                response = "LLM not initialized. Provide an API key or select a model."
 
-        if conversation:
-            response = conversation.run(enriched_query)
-        else:
-            response = "LLM not initialized. Provide an API key or select a model."
+            chart_link = get_chart_link(user_text, st.session_state["user_csv_db"])
+            if chart_link:
+                response += f"\n\nFor visual insights, view the TradingView chart: [View on TradingView]({chart_link})"
 
-        chart_link = get_chart_link(user_text, st.session_state.get("user_csv_db", pd.DataFrame()))
-        if chart_link:
-            response += f"\n\nFor visual insights, view the TradingView chart: [View on TradingView]({chart_link})"
-
-        st.session_state["chat_history"].append({"user": user_text, "bot": response})
-        st.write("🤖:", response)
+            st.session_state["chat_history"].append({"user": user_text, "bot": response})
+            st.write("🤖:", response)
+else:
+    st.warning("Please log in to start chatting.")
 
 if st.session_state["chat_history"]:
     st.subheader("📝 Conversation History")
@@ -583,15 +626,12 @@ with st.sidebar.expander("ℹ Info"):
     st.write("Weekly Change: % change between the last trading day and the day 5 days ago.")
     st.write("We show the top 10 stocks (from the first 50) with the biggest weekly moves.")
 if st.sidebar.button("View Top Movers"):
-    if "user_csv_db" in st.session_state and st.session_state["user_csv_db"] is not None:
-        result_df = compute_top_weekly_movers(st.session_state["user_csv_db"])
-        if result_df.empty:
-            st.sidebar.warning("No valid ticker data or insufficient data for weekly move.")
-        else:
-            html_table = result_df.to_html(index=False)
-            st.sidebar.write(html_table, unsafe_allow_html=True)
+    result_df = compute_top_weekly_movers(st.session_state["user_csv_db"])
+    if result_df.empty:
+        st.sidebar.warning("No valid ticker data or insufficient data for weekly move.")
     else:
-        st.sidebar.warning("No stock data loaded.")
+        html_table = result_df.to_html(index=False)
+        st.sidebar.write(html_table, unsafe_allow_html=True)
 
 # ---------------------------
 # Stock & CEO Analysis
@@ -690,4 +730,3 @@ def export_chat_to_pdf(chat_history):
 if st.button("📄 Export Chat as PDF"):
     pdf_data = export_chat_to_pdf(st.session_state["chat_history"])
     st.download_button(label="Download PDF", data=pdf_data, file_name="chat_history.pdf", mime="application/pdf")
-

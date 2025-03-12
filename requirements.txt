@@ -11,3 +11,4 @@ textblob
 reportlab
 langchain
 langchain-community
+openai
