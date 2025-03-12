@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# NLP
+# NLPgit 
 import nltk
 from textblob import TextBlob
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -105,11 +105,10 @@ with st.sidebar.expander("App Setup"):
     presence_penalty = st.slider("Presence Penalty", 0.0, 2.0, 0.0, 0.1, key="pres_penalty")
 
 # ---------------------------
-# Load Other Environment Variables
+# Load Environment Variables
 # ---------------------------
-load_dotenv()
-NEWS_API_KEY = os.getenv("NEWSAPI_KEY")
-ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+NEWS_API_KEY = st.secrets.get("NEWSAPI_KEY", None)
+ALPHA_VANTAGE_API_KEY = st.secrets.get("ALPHA_VANTAGE_API_KEY", None)
 
 # ---------------------------
 # Download NLTK Data
@@ -690,4 +689,3 @@ def export_chat_to_pdf(chat_history):
 if st.button("📄 Export Chat as PDF"):
     pdf_data = export_chat_to_pdf(st.session_state["chat_history"])
     st.download_button(label="Download PDF", data=pdf_data, file_name="chat_history.pdf", mime="application/pdf")
-
