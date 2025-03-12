@@ -8,6 +8,6 @@ matplotlib
 python-dotenv
 nltk
 textblob
-langchain
 reportlab
-openai
+langchain
+langchain-community

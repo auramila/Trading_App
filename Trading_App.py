@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import re
 import requests
 import random
 import pandas as pd
@@ -36,8 +37,6 @@ from datetime import datetime, timedelta
 # ------------------------------------------------
 # SECURITY GUARD #1: Simple disallowed-content check
 # ------------------------------------------------
-# This is a basic text check for certain disallowed phrases or known jailbreak attempts.
-# In production, you can add more robust checks or integrate an external Moderation API.
 DISALLOWED_PHRASES = [
     "jailbreak",
     "DAN prompt",
@@ -53,7 +52,6 @@ def contains_disallowed_content(user_input: str) -> bool:
 # -----------------------------------------------
 # SECURITY GUARD #2: Rate/length limit
 # -----------------------------------------------
-# This helps mitigate extremely large or frequent requests that might break or spam the system.
 LAST_REQUEST_TIME_KEY = "last_request_time"
 REQUEST_COOLDOWN_SECONDS = 2  # minimal cooldown to prevent spamming
 MAX_PROMPT_LENGTH = 1500      # maximum number of characters for a single prompt
@@ -152,7 +150,7 @@ ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 # ---------------------------
 try:
     if not firebase_admin._apps:
-        cred_path = "firebase_credentials.json"  # Provide your Firebase credentials
+        cred_path = "firebase_credentials.json"
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
 except Exception as e:
@@ -176,7 +174,7 @@ if st.session_state.get("user_csv_db") is None:
         st.sidebar.error(f"Error loading default CSV: {e}")
 
 # ---------------------------
-# Create OpenAI LLM Instance (Always OpenAI)
+# Create OpenAI LLM Instance
 # ---------------------------
 def create_llm():
     if openai_api_key_input:
@@ -257,9 +255,7 @@ def get_stock_info_cached(ticker_symbol: str):
     except Exception as e:
         return {"Error": f"Could not retrieve stock data: {e}"}
 
-# ---------------------------
-# Helper: Format change with one decimal (no emojis)
-# ---------------------------
+
 def format_change(val):
     if pd.isna(val):
         return ""
@@ -508,38 +504,78 @@ if st.sidebar.button("Check Market"):
     st.sidebar.markdown("**Summary:** Overall, the daily and monthly trends combined suggest mixed signals.")
 
 # ---------------------------
-# Enrich Investment Query Function
+# Improved Ticker/Company Matching
 # ---------------------------
+def ticker_mentioned_in_text(user_text: str, ticker: str) -> bool:
+    """
+    Returns True if 'ticker' is found as a separate word or within parentheses
+    in 'user_text'. This prevents partial matches (e.g. 'T' inside 'TESLA').
+    """
+    # Example pattern: \bTSLA\b to match entire word or (TSLA)
+    pattern = r'(\b|\()' + re.escape(ticker.upper()) + r'(\b|\))'
+    return re.search(pattern, user_text.upper()) is not None
+
+def company_mentioned_in_text(user_text: str, company_name: str) -> bool:
+    """
+    Simple substring check for the company name.
+    """
+    return company_name.upper() in user_text.upper()
+
 def enrich_investment_query(user_text: str, df: pd.DataFrame) -> str:
-    text_upper = user_text.upper()
+    """
+    1) Try to find an EXACT ticker match in the user_text (word boundary).
+    2) If not found, try to see if the full company name is in the user_text.
+    3) If found, attach CSV data; if not, return user_text unchanged.
+    """
     matched_row = None
+
+    # 1) Try exact ticker match
     for _, row in df.iterrows():
-        ticker = str(row["ticker"]).upper()
-        company = str(row["company name"]).upper() if "company name" in row else ""
-        if ticker in text_upper or company in text_upper:
+        ticker_str = str(row["ticker"]).strip()
+        if ticker_mentioned_in_text(user_text, ticker_str):
             matched_row = row
             break
+
+    # 2) If no exact ticker match found, try partial match on company name
+    if matched_row is None:
+        for _, row in df.iterrows():
+            comp_str = str(row.get("company name", "")).strip()
+            if comp_str and company_mentioned_in_text(user_text, comp_str):
+                matched_row = row
+                break
+
+    # 3) If matched, enrich user_text
     if matched_row is not None:
+        ticker_val = matched_row.get("ticker", "N/A")
+        comp_val = matched_row.get("company name", "N/A")
+        comments_val = matched_row.get("comments", "N/A")
+
         enriched = (
-            f"{user_text}\n\nData from topbuzz500: "
-            f"Ticker: {matched_row['ticker']}, "
-            f"Company: {matched_row['company name']}, "
-            f"Comments: {matched_row.get('comments', 'N/A')}. "
-            "Please provide investment advice based on this data, including additional insights such as sector, market cap, and growth outlook."
+            f"{user_text}\n\n"
+            f"Data from topbuzz500: "
+            f"Ticker: {ticker_val}, "
+            f"Company: {comp_val}, "
+            f"Comments: {comments_val}.\n"
+            "Please provide investment advice based on this data, "
+            "including additional insights such as sector, market cap, and growth outlook."
         )
         return enriched
-    else:
-        return user_text
+
+    # If no match, return original prompt
+    return user_text
 
 # ---------------------------
 # Function to generate TradingView chart link for a stock
 # ---------------------------
 def get_chart_link(user_text: str, df: pd.DataFrame) -> str:
-    text_upper = user_text.upper()
+    """
+    Now uses the same 'ticker_mentioned_in_text' approach for an exact match,
+    so 'T' won't trigger if user says 'Tesla'.
+    """
     for _, row in df.iterrows():
-        ticker = str(row["ticker"]).upper()
-        if ticker in text_upper:
-            return f"https://www.tradingview.com/symbols/{ticker}/"
+        ticker_str = str(row["ticker"]).strip()
+        if ticker_mentioned_in_text(user_text, ticker_str):
+            return f"https://www.tradingview.com/symbols/{ticker_str.upper()}/"
     return ""
 
 # ---------------------------
@@ -548,7 +584,7 @@ def get_chart_link(user_text: str, df: pd.DataFrame) -> str:
 st.title("StockTalk: Your Investment Buddy")
 if st.session_state["user"]:
     with st.form(key="chat_form", clear_on_submit=True):
-        user_text = st.text_input("Your Investment Question:")
+        user_text = st.text_input("Your Investment Question (e.g. 'Tell me more about TSLA?', 'Which sector is hot right now?'):")
         submit_button = st.form_submit_button("Send")
 
     if submit_button and user_text.strip():
