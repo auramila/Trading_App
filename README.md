@@ -4,6 +4,12 @@
 
 StockTalk is an interactive investment analysis app built using Streamlit and LangChain, allowing users to interact with AI-driven financial insights. The goal was to integrate various financial tools into an interactive platform, providing users with real-time stock insights, market trends, sentiment analysis, and AI-powered investment discussions, making financial information more accessible and engaging.
 
+## 🚀 Deployed App
+The application is live and can be accessed here:  
+🔗 **[Aura Trading App](https://auratrading.streamlit.app)**  
+
+Feel free to try it out and provide feedback!
+
 ## Features
 
 - 📈 Market Overview – Get insights into major indices like S&P 500, Nasdaq, and Dow Jones.
